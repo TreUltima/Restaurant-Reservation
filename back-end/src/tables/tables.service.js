@@ -1,46 +1,62 @@
-const knex = require("../db/connection");
+const knex = require("../db/connection.js");
 
-const create = (table) => 
-  knex("tables")
-  .insert(table)
-  .returning("*");
+function list() {
+  return knex("tables").select("*").orderBy("table_name");
+}
 
-const read = (table_id) => 
-  knex("tables")
-  .first("*")
-  .where({ table_id });
+function read(table_id) {
+  return knex("tables").select("*").where({ table_id }).first();
+}
 
-const updateReservation = (reservation_id, status) => 
-  knex("reservations")
-  .where({ reservation_id })
-  .update({ status });
+function create(table) {
+  return knex("tables")
+    .insert(table)
+    .returning("*")
+    .then((createdRecords) => createdRecords[0]);
+}
 
-const list = () => 
-  knex("tables")
-  .select("*")
-  .orderBy("table_name");
+function update(reservation_id, table_id) {
+  return knex.transaction(async (trx) => {
+    await knex("reservations")
+      .where({ reservation_id })
+      .update({ status: "seated" })
+      .transacting(trx);
 
-const readReservation = (reservation_id) => 
-  knex("reservations")
-  .first("*")
-  .where({ reservation_id });
+    return knex("tables")
+      .select("*")
+      .where({ table_id })
+      .update({ reservation_id: reservation_id }, "*")
+      .update({
+        occupied: knex.raw("NOT ??", ["occupied"]),
+      })
+      .transacting(trx)
+      .then((createdRecords) => createdRecords[0]);
+  });
+}
 
-const occupied = (table_id, reservation_id) => 
-  knex("tables")
-  .where({ table_id })
-  .update({ reservation_id, status: "occupied" });
+function finish(reservation_id, table_id) {
+  return knex.transaction(async (trx) => {
+    await knex("reservations")
+      .where({ reservation_id })
+      .update({ status: "finished" })
+      .transacting(trx);
 
-const free = (table_id) => 
-  knex("tables")
-  .where({ table_id })
-  .update({ reservation_id: null, status: "free" });
+    return knex("tables")
+      .select("*")
+      .where({ table_id })
+      .update({ reservation_id: null }, "*")
+      .update({
+        occupied: knex.raw("NOT ??", ["occupied"]),
+      })
+      .transacting(trx)
+      .then((createdRecords) => createdRecords[0]);
+  });
+}
 
-module.exports = { 
-  list, 
-  create, 
-  read, 
-  occupied, 
-  free, 
-  readReservation, 
-  updateReservation 
+module.exports = {
+  list,
+  read,
+  create,
+  update,
+  finish,
 };
